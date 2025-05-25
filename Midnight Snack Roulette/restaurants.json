@@ -1,0 +1,59 @@
+{
+    "restaurants": [
+        {
+            "id": "1",
+            "name": "Tasty Bites",
+            "discount": "20% off all items after midnight",
+            "address": "123 Night Street",
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "cuisine": "American",
+            "rating": 4.5,
+            "open_until": "03:00"
+        },
+        {
+            "id": "2",
+            "name": "Midnight Ramen",
+            "discount": "Free appetizer with any main dish",
+            "address": "456 Late Night Ave",
+            "latitude": 37.7833,
+            "longitude": -122.4167,
+            "cuisine": "Japanese",
+            "rating": 4.7,
+            "open_until": "02:00"
+        },
+        {
+            "id": "3",
+            "name": "Pizza Paradise",
+            "discount": "Buy 1 Get 1 Free on all pizzas",
+            "address": "789 Slice Road",
+            "latitude": 37.7855,
+            "longitude": -122.4067,
+            "cuisine": "Italian",
+            "rating": 4.3,
+            "open_until": "04:00"
+        },
+        {
+            "id": "4",
+            "name": "Taco Time",
+            "discount": "50% off all tacos after midnight",
+            "address": "321 Spice Lane",
+            "latitude": 37.7875,
+            "longitude": -122.4075,
+            "cuisine": "Mexican",
+            "rating": 4.6,
+            "open_until": "03:00"
+        },
+        {
+            "id": "5",
+            "name": "Burger Joint",
+            "discount": "Free fries with any burger",
+            "address": "654 Patty Street",
+            "latitude": 37.7865,
+            "longitude": -122.4085,
+            "cuisine": "American",
+            "rating": 4.4,
+            "open_until": "02:30"
+        }
+    ]
+} 
