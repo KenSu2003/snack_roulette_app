@@ -44,6 +44,15 @@ class WheelViewController: UIViewController {
     private var remainingLockTime: TimeInterval = 0
     private var isSpinLocked = false
     private var currentDiscountCode: String = ""
+    private var hasSpunToday = false
+    
+    // Time restriction settings
+    private let allowedStartHour = 0  // 12:00 AM (midnight)
+    private let allowedEndHour = 10   // 10:00 AM
+    
+    // Testing toggle - set to true to bypass time restrictions
+    private let mockTimeForTesting = false   // false by default
+    private let mockHourForTesting = 9 // 2:00 AM (within allowed time)
     
     // Simulated friend status messages
     private let friendStatuses = [
@@ -173,6 +182,18 @@ class WheelViewController: UIViewController {
         return collectionView
     }()
     
+    private lazy var resetButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Reset", for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 14)
+        button.backgroundColor = .systemRed.withAlphaComponent(0.7)
+        button.setTitleColor(.white, for: .normal)
+        button.layer.cornerRadius = 12
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.addTarget(self, action: #selector(resetButtonTapped), for: .touchUpInside)
+        return button
+    }()
+    
     // MARK: - Lifecycle Methods
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -181,6 +202,14 @@ class WheelViewController: UIViewController {
         loadRestaurantData()
         loadSimulatedFriends()
         startStatusUpdates()
+        loadSpinRecord()
+        checkSpinRestrictions()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Check restrictions each time the view appears
+        checkSpinRestrictions()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -208,6 +237,7 @@ class WheelViewController: UIViewController {
         view.addSubview(spinWheelView)
         view.addSubview(spinButton)
         view.addSubview(discountCodeView)
+        view.addSubview(resetButton)
         
         // Setup constraints
         NSLayoutConstraint.activate([
@@ -264,7 +294,13 @@ class WheelViewController: UIViewController {
             discountCodeValueLabel.topAnchor.constraint(equalTo: discountCodeLabel.bottomAnchor, constant: 10),
             discountCodeValueLabel.centerXAnchor.constraint(equalTo: discountCodeView.centerXAnchor),
             discountCodeValueLabel.leadingAnchor.constraint(equalTo: discountCodeView.leadingAnchor, constant: 10),
-            discountCodeValueLabel.trailingAnchor.constraint(equalTo: discountCodeView.trailingAnchor, constant: -10)
+            discountCodeValueLabel.trailingAnchor.constraint(equalTo: discountCodeView.trailingAnchor, constant: -10),
+            
+            // Reset button at bottom of screen
+            resetButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            resetButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            resetButton.widthAnchor.constraint(equalToConstant: 100),
+            resetButton.heightAnchor.constraint(equalToConstant: 40)
         ])
         
         // Initially hide interactive elements
@@ -274,10 +310,16 @@ class WheelViewController: UIViewController {
         spinWheelView.isHidden = true
         spinButton.isHidden = true
         discountCodeView.isHidden = true
+        resetButton.isHidden = true
         
         // Style the spin button to match the wheel
         spinButton.backgroundColor = .systemBlue.withAlphaComponent(0.7)
         spinButton.layer.cornerRadius = 25
+
+        // Style the reset button to be more visible
+        resetButton.backgroundColor = .systemRed.withAlphaComponent(0.8)
+        resetButton.layer.cornerRadius = 20
+        resetButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .bold)
     }
     
     // MARK: - Data Loading
@@ -330,18 +372,78 @@ class WheelViewController: UIViewController {
         spinWheelView.isHidden = false
         spinButton.isHidden = false
         discountCodeView.isHidden = true  // Hidden until a discount code is generated
+        resetButton.isHidden = true  // Show reset button
         
         // Setup spin wheel with restaurant names
         let restaurantNames = restaurants.map { $0.name }
         spinWheelView.setItems(restaurantNames)
     }
     
+    // MARK: - Time Restriction Methods
+    private func checkSpinRestrictions() {
+        if hasSpunToday {
+            // User has already spun today
+            lockSpinWithMessage("You've already spun today")
+            return
+        }
+        
+        if !isWithinAllowedTimeRange() {
+            // Outside allowed time range
+            let nextAllowedTime = getNextAllowedTime()
+            lockSpinUntil(nextAllowedTime, message: "Spinning available 12AM-10AM")
+        } else {
+            // Within allowed time range and hasn't spun yet
+            unlockSpin()
+        }
+    }
+    
+    private func isWithinAllowedTimeRange() -> Bool {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // If testing mode is enabled, use mock time
+        if mockTimeForTesting {
+            return mockHourForTesting >= allowedStartHour && mockHourForTesting < allowedEndHour
+        }
+        
+        let hour = calendar.component(.hour, from: now)
+        return hour >= allowedStartHour && hour < allowedEndHour
+    }
+    
+    private func getNextAllowedTime() -> Date {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // If it's after the end time, next allowed time is midnight
+        var components = calendar.dateComponents([.year, .month, .day], from: now)
+        components.day! += 1  // Next day
+        components.hour = allowedStartHour
+        components.minute = 0
+        components.second = 0
+        
+        return calendar.date(from: components) ?? Date()
+    }
+    
+    private func lockSpinWithMessage(_ message: String) {
+        isSpinLocked = true
+        spinButton.isEnabled = false
+        spinButton.backgroundColor = .systemGray3
+        spinButton.setTitle(message, for: .normal)
+    }
+    
+    private func unlockSpin() {
+        isSpinLocked = false
+        spinButton.isEnabled = true
+        spinButton.backgroundColor = .systemBlue.withAlphaComponent(0.7)
+        spinButton.setTitle("SPIN!", for: .normal)
+    }
+    
     // MARK: - Actions
     @objc private func spinButtonTapped() {
         if isSpinLocked {
             let alert = UIAlertController(
-                title: "Spin Locked",
-                message: "You'll need to wait until midnight to spin again.",
+                title: "Spinning Not Available",
+                message: "Spinning is only available between 12:00 AM and 10:00 AM, and only once per day.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "OK", style: .default))
@@ -349,8 +451,14 @@ class WheelViewController: UIViewController {
             return
         }
         
+        // Mark as spun for today
+        hasSpunToday = true
+        
         print("Spinning with items: \(restaurants.map { $0.name })")
         spinWheelView.spin()
+        
+        // Save the fact that user has spun today
+        saveSpinRecord()
     }
     
     // MARK: - Restaurant Details
@@ -382,11 +490,7 @@ class WheelViewController: UIViewController {
             self?.lockSpinUntilMidnight()
         })
         
-        alert.addAction(UIAlertAction(title: "Spin Again", style: .default) { [weak self] _ in
-            self?.spinWheelView.spin()
-        })
-        
-        alert.addAction(UIAlertAction(title: "Save", style: .cancel) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: "Close", style: .cancel) { [weak self] _ in
             self?.showDiscountCode(self?.currentDiscountCode ?? "")
             self?.lockSpinUntilMidnight()
         })
@@ -451,6 +555,30 @@ class WheelViewController: UIViewController {
     }
     
     // MARK: - Spin Lock Timer
+    private func lockSpinUntil(_ unlockTime: Date, message: String? = nil) {
+        // Calculate seconds until unlock time
+        remainingLockTime = unlockTime.timeIntervalSince(Date())
+        
+        // Lock spin button
+        isSpinLocked = true
+        spinButton.isEnabled = false
+        spinButton.backgroundColor = .systemGray3
+        
+        if let message = message {
+            spinButton.setTitle(message, for: .normal)
+        }
+        
+        // Start timer
+        updateLockTimerDisplay()
+        spinLockTimer = Timer.scheduledTimer(
+            timeInterval: 1.0,
+            target: self,
+            selector: #selector(updateLockTimer),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+    
     private func lockSpinUntilMidnight() {
         // Calculate time until midnight
         let calendar = Calendar.current
@@ -462,24 +590,7 @@ class WheelViewController: UIViewController {
         
         guard let midnightDate = calendar.date(from: components) else { return }
         
-        // Calculate seconds until midnight
-        remainingLockTime = midnightDate.timeIntervalSince(Date())
-        
-        // Lock spin button
-        isSpinLocked = true
-        spinButton.isEnabled = false
-        spinButton.backgroundColor = .systemGray3
-        discountCodeView.isHidden = false
-        
-        // Start timer
-        updateLockTimerDisplay()
-        spinLockTimer = Timer.scheduledTimer(
-            timeInterval: 1.0,
-            target: self,
-            selector: #selector(updateLockTimer),
-            userInfo: nil,
-            repeats: true
-        )
+        lockSpinUntil(midnightDate)
     }
     
     private func stopLockTimer() {
@@ -519,6 +630,37 @@ class WheelViewController: UIViewController {
     private func showDiscountCode(_ code: String) {
         discountCodeValueLabel.text = code
         discountCodeView.isHidden = false
+    }
+    
+    // MARK: - Data Persistence
+    private func saveSpinRecord() {
+        let defaults = UserDefaults.standard
+        let today = Calendar.current.startOfDay(for: Date())
+        defaults.set(today, forKey: "lastSpinDate")
+    }
+    
+    private func loadSpinRecord() {
+        let defaults = UserDefaults.standard
+        if let lastSpinDate = defaults.object(forKey: "lastSpinDate") as? Date {
+            let today = Calendar.current.startOfDay(for: Date())
+            hasSpunToday = Calendar.current.isDate(lastSpinDate, inSameDayAs: today)
+        } else {
+            hasSpunToday = false
+        }
+    }
+    
+    // Reset user data by clearing spin record
+    private func resetUserData() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "lastSpinDate")
+        hasSpunToday = false
+        unlockSpin()
+        resetButton.isHidden = false // Ensure button remains visible
+        print("User data reset successfully")
+    }
+    
+    @objc private func resetButtonTapped() {
+        resetUserData()
     }
 }
 
