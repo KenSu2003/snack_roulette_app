@@ -386,7 +386,7 @@ class WheelViewController: UIViewController {
             self?.spinWheelView.spin()
         })
         
-        alert.addAction(UIAlertAction(title: "Close", style: .cancel) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: "Save", style: .cancel) { [weak self] _ in
             self?.showDiscountCode(self?.currentDiscountCode ?? "")
             self?.lockSpinUntilMidnight()
         })
