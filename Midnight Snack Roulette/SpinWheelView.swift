@@ -9,161 +9,212 @@ class SpinWheelView: UIView {
     private var items: [String] = []
     private var currentRotation: CGFloat = 0
     private var isSpinning = false
-    private var selectedItemAfterSpin: String?
+    private var selectedItem: String?
     weak var delegate: SpinWheelViewDelegate?
     
-    private let wheelContainerLayer = CALayer()
-    private let pointerLayer = CAShapeLayer()
+    // Use a single UIImageView for the wheel instead of CALayers
+    private let wheelImageView = UIImageView()
+    private let pointerImageView = UIImageView()
     
     // MARK: - Initialization
     override init(frame: CGRect) {
         super.init(frame: frame)
-        setupLayers()
+        setupViews()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        setupLayers()
+        setupViews()
     }
     
     // MARK: - Setup
-    private func setupLayers() {
-        layer.addSublayer(wheelContainerLayer)
-        layer.addSublayer(pointerLayer)
+    private func setupViews() {
+        // Setup wheel image view
+        wheelImageView.contentMode = .scaleAspectFit
+        wheelImageView.translatesAutoresizingMaskIntoConstraints = false
+        wheelImageView.backgroundColor = .systemBlue.withAlphaComponent(0.1)
+        wheelImageView.layer.cornerRadius = min(bounds.width, bounds.height) / 2
+        wheelImageView.clipsToBounds = true
+        addSubview(wheelImageView)
+        
+        // Setup pointer image view
+        pointerImageView.image = UIImage(systemName: "arrowtriangle.down.fill")
+        pointerImageView.tintColor = .systemRed
+        pointerImageView.contentMode = .scaleAspectFit
+        pointerImageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pointerImageView)
+        
+        // Setup constraints
+        NSLayoutConstraint.activate([
+            wheelImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            wheelImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            wheelImageView.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.9),
+            wheelImageView.heightAnchor.constraint(equalTo: wheelImageView.widthAnchor),
+            
+            pointerImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            pointerImageView.bottomAnchor.constraint(equalTo: wheelImageView.topAnchor, constant: 10),
+            pointerImageView.widthAnchor.constraint(equalToConstant: 30),
+            pointerImageView.heightAnchor.constraint(equalToConstant: 30)
+        ])
     }
     
-    // MARK: - Layout
     override func layoutSubviews() {
         super.layoutSubviews()
-        wheelContainerLayer.frame = bounds
-        pointerLayer.frame = bounds
+        // Redraw the wheel when layout changes
         drawWheel()
-        updatePointerPath()
-        wheelContainerLayer.setAffineTransform(CGAffineTransform(rotationAngle: currentRotation))
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        print("[SpinWheelView] bounds: \(bounds), center: \(center), layer.anchorPoint: \(layer.anchorPoint), layer.position: \(layer.position)")
+        
+        // Update corner radius as bounds may have changed
+        wheelImageView.layer.cornerRadius = wheelImageView.bounds.width / 2
     }
     
+    // MARK: - Drawing
     private func drawWheel() {
-        wheelContainerLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
         guard !items.isEmpty else { return }
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let radius = min(bounds.width, bounds.height) / 2 - 10
+        
+        // Make sure the wheel has valid dimensions before drawing
+        let wheelSize = wheelImageView.bounds.size
+        guard wheelSize.width > 0 && wheelSize.height > 0 else {
+            print("Cannot draw wheel: invalid size \(wheelSize)")
+            return
+        }
+        
+        // Use a fixed size for the image context to avoid zero dimensions
+        let size = CGSize(width: max(wheelSize.width, 100), height: max(wheelSize.height, 100))
+        
+        // Create a new image context
+        UIGraphicsBeginImageContextWithOptions(size, false, 0)
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let radius = min(size.width, size.height) / 2 - 10
         let itemAngle = (2 * .pi) / CGFloat(items.count)
         
+        // Draw wheel segments
         for (index, item) in items.enumerated() {
             let startAngle = CGFloat(index) * itemAngle
             let endAngle = startAngle + itemAngle
             
-            // Segment
-            let segmentPath = UIBezierPath()
-            segmentPath.move(to: center)
-            segmentPath.addArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
-            segmentPath.close()
+            // Create segment path - using clockwise: true for proper direction
+            context.move(to: center)
+            context.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+            context.closePath()
             
-            let segmentLayer = CAShapeLayer()
-            segmentLayer.path = segmentPath.cgPath
-            segmentLayer.fillColor = (index % 2 == 0 ? UIColor.systemBlue.withAlphaComponent(0.3) : UIColor.systemBlue.withAlphaComponent(0.1)).cgColor
-            segmentLayer.strokeColor = UIColor.systemBlue.cgColor
-            segmentLayer.lineWidth = 2
-            wheelContainerLayer.addSublayer(segmentLayer)
+            // Fill segment
+            let fillColor = (index % 2 == 0) ? 
+                UIColor.systemBlue.withAlphaComponent(0.3) : 
+                UIColor.systemBlue.withAlphaComponent(0.1)
+            context.setFillColor(fillColor.cgColor)
+            context.setStrokeColor(UIColor.systemBlue.cgColor)
+            context.setLineWidth(2)
+            context.drawPath(using: .fillStroke)
             
-            // Label (no counter-rotation, rotates with the wheel)
-            let textAngle = startAngle + itemAngle / 2
+            // Add text
+            let textAngle = startAngle + (itemAngle / 2)
             let textRadius = radius * 0.7
             let textPoint = CGPoint(
                 x: center.x + cos(textAngle) * textRadius,
                 y: center.y + sin(textAngle) * textRadius
             )
             
-            let textLayer = CATextLayer()
-            textLayer.string = NSAttributedString(string: item, attributes: [
-                .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
+            // Save context state before rotating text
+            context.saveGState()
+            
+            // Translate to text position and rotate
+            context.translateBy(x: textPoint.x, y: textPoint.y)
+            context.rotate(by: textAngle + .pi/2)
+            
+            // Configure text attributes
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium),
                 .foregroundColor: UIColor.black
-            ])
-            textLayer.alignmentMode = .center
-            textLayer.contentsScale = UIScreen.main.scale
-            let textSize = (item as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 14, weight: .semibold)])
-            textLayer.frame = CGRect(x: textPoint.x - textSize.width / 2, y: textPoint.y - textSize.height / 2, width: textSize.width, height: textSize.height)
-            wheelContainerLayer.addSublayer(textLayer)
+            ]
+            let textSize = (item as NSString).size(withAttributes: attributes)
+            
+            // Draw text centered at origin (which is now at textPoint after translation)
+            (item as NSString).draw(
+                at: CGPoint(x: -textSize.width / 2, y: -textSize.height / 2),
+                withAttributes: attributes
+            )
+            
+            // Restore context
+            context.restoreGState()
         }
-    }
-    
-    private func updatePointerPath() {
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let pointerWidth: CGFloat = 24
-        let pointerHeight: CGFloat = 28
-        let radius = min(bounds.width, bounds.height) / 2 - 10
-        let tipY = center.y - radius + 5
         
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: center.x, y: tipY)) // tip at top edge
-        path.addLine(to: CGPoint(x: center.x - pointerWidth / 2, y: tipY + pointerHeight))
-        path.addLine(to: CGPoint(x: center.x + pointerWidth / 2, y: tipY + pointerHeight))
-        path.close()
+        // Get the image from the context
+        let wheelImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
         
-        pointerLayer.path = path.cgPath
-        pointerLayer.fillColor = UIColor.systemRed.cgColor
-        pointerLayer.zPosition = 10 // ensure on top
+        // Set the image to the image view
+        wheelImageView.image = wheelImage
     }
     
     // MARK: - Public Methods
     func setItems(_ items: [String]) {
         self.items = items
-        setNeedsLayout()
+        
+        // Only draw the wheel if we have a valid size
+        if wheelImageView.bounds.size.width > 0 && wheelImageView.bounds.size.height > 0 {
+            drawWheel()
+        }
     }
     
     func spin() {
         guard !isSpinning, !items.isEmpty else { return }
         isSpinning = true
-
-        // Remove any lingering animations and set the transform to the current rotation
-        wheelContainerLayer.removeAllAnimations()
-        wheelContainerLayer.setAffineTransform(CGAffineTransform(rotationAngle: currentRotation))
-
-        // Random number of full rotations (3-5)
-        let fullRotations = CGFloat.random(in: 3...5)
-        // Random final angle
-        let finalAngle = CGFloat.random(in: 0...(2 * .pi))
-
-        let totalRotation = (fullRotations * 2 * .pi) + finalAngle
-
-        // Create rotation animation
-        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-        rotation.fromValue = currentRotation
-        rotation.toValue = currentRotation + totalRotation
-        rotation.duration = 3.0
-        rotation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        rotation.isRemovedOnCompletion = false
-        rotation.fillMode = .forwards
-        rotation.delegate = self
-
-        wheelContainerLayer.add(rotation, forKey: "rotation")
-        currentRotation += totalRotation
-
-        // Calculate selected item and store for use after animation
-        let itemAngle = (2 * .pi) / CGFloat(items.count)
-        let normalizedAngle = currentRotation.truncatingRemainder(dividingBy: 2 * .pi)
-        let selectedIndex = min(Int((2 * .pi - normalizedAngle) / itemAngle) % items.count, items.count - 1)
-        selectedItemAfterSpin = items[selectedIndex]
-    }
-}
-
-// MARK: - CAAnimationDelegate
-extension SpinWheelView: CAAnimationDelegate {
-    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
-        guard flag else { return }
-        // Sync the model layer's transform to the presentation layer's transform
-        if let pres = wheelContainerLayer.presentation() {
-            let t = pres.affineTransform()
-            wheelContainerLayer.setAffineTransform(t)
-            currentRotation = atan2(t.b, t.a)
+        
+        // Select a random item index
+        let selectedIndex = Int.random(in: 0..<items.count)
+        print("Selected index will be: \(selectedIndex) (\(items[selectedIndex]))")
+        
+        // Reset the wheel's transform to avoid accumulated transforms
+        wheelImageView.transform = .identity
+        wheelImageView.layer.removeAllAnimations()
+        
+        // Create a rotation animation using CABasicAnimation for better control
+        let spinAnimation = CABasicAnimation(keyPath: "transform.rotation")
+        
+        // Set from value (current rotation)
+        spinAnimation.fromValue = 0
+        
+        // Set a VERY large to value (50-70 full rotations) for dramatic spinning
+        // Negative for clockwise rotation
+        let rotations = Double.random(in: 50...70)
+        spinAnimation.toValue = -2 * Double.pi * rotations
+        
+        // Configure animation timing
+        spinAnimation.duration = 4.0  // 4 seconds total duration
+        spinAnimation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        
+        // Make sure animation completes
+        spinAnimation.fillMode = .forwards
+        spinAnimation.isRemovedOnCompletion = false
+        
+        // Add completion handler using CATransaction
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            // Reset isSpinning flag
+            self.isSpinning = false
+            
+            // Notify delegate with selected item
+            if selectedIndex >= 0 && selectedIndex < self.items.count {
+                let selected = self.items[selectedIndex]
+                self.delegate?.spinWheelDidSelectItem(selected)
+            }
+            
+            // Set the final rotation directly on the layer
+            let itemAngle = (2 * Double.pi) / Double(self.items.count)
+            let finalAngle = -Double(selectedIndex) * itemAngle
+            
+            // Adjust the transform to place the selected segment at the top
+            self.wheelImageView.layer.transform = CATransform3DMakeRotation(CGFloat(finalAngle), 0, 0, 1)
         }
-        wheelContainerLayer.removeAllAnimations()
-        isSpinning = false
-        if let selected = selectedItemAfterSpin {
-            delegate?.spinWheelDidSelectItem(selected)
-            selectedItemAfterSpin = nil
-        }
+        
+        // Add the animation to the layer
+        wheelImageView.layer.add(spinAnimation, forKey: "spinAnimation")
+        
+        // Log the animation
+        print("Spinning wheel with \(rotations) rotations (very fast)")
+        
+        CATransaction.commit()
     }
 } 
