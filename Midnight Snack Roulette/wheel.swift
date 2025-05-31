@@ -38,6 +38,19 @@ class WheelViewController: UIViewController {
     private var selectedRestaurant: Restaurant?
     private var friends: [Friend] = []
     private var selectedItemAfterSpin: String?
+    private var statusUpdateTimer: Timer?
+    private var currentStatusIndex = 0
+    
+    // Simulated friend status messages
+    private let friendStatuses = [
+        "Alice is enjoying Tacos at Taco Time",
+        "Bob just ordered a Double Burger at Burger Joint",
+        "Charlie is eating Pizza Paradise right now",
+        "Diana recommends the spicy ramen at Midnight Ramen",
+        "Eve is on her way to Tasty Bites",
+        "Frank just finished his meal at Pizza Paradise",
+        "Grace loves the dessert at Midnight Ramen"
+    ]
     
     // MARK: - UI Components
     private lazy var countdownLabel: UILabel = {
@@ -46,6 +59,32 @@ class WheelViewController: UIViewController {
         label.font = .systemFont(ofSize: 24, weight: .bold)
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }()
+    
+    private lazy var statusBarView: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1)
+        view.layer.cornerRadius = 10
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
+    private lazy var statusLabel: UILabel = {
+        let label = UILabel()
+        label.text = friendStatuses.first
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .darkGray
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    private lazy var statusIconImageView: UIImageView = {
+        let imageView = UIImageView(image: UIImage(systemName: "bubble.left.fill"))
+        imageView.tintColor = .systemBlue
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
     }()
     
     private lazy var messageTextField: UITextField = {
@@ -98,15 +137,25 @@ class WheelViewController: UIViewController {
         checkTimeAndInitialize()
         loadRestaurantData()
         loadSimulatedFriends()
+        startStatusUpdates()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopStatusUpdates()
     }
     
     // MARK: - Setup Methods
     private func setupUI() {
         view.backgroundColor = .systemBackground
         
+        // Setup status bar
+        statusBarView.addSubview(statusIconImageView)
+        statusBarView.addSubview(statusLabel)
+        
         // Add subviews
         view.addSubview(countdownLabel)
-        view.addSubview(messageTextField)
+        view.addSubview(statusBarView)
         view.addSubview(friendsCollectionView)
         view.addSubview(spinWheelView)
         view.addSubview(spinButton)
@@ -116,11 +165,22 @@ class WheelViewController: UIViewController {
             countdownLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             countdownLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             
-            messageTextField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-            messageTextField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            messageTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            // Status bar constraints
+            statusBarView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            statusBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            statusBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            statusBarView.heightAnchor.constraint(equalToConstant: 44),
             
-            friendsCollectionView.topAnchor.constraint(equalTo: messageTextField.bottomAnchor, constant: 20),
+            statusIconImageView.leadingAnchor.constraint(equalTo: statusBarView.leadingAnchor, constant: 12),
+            statusIconImageView.centerYAnchor.constraint(equalTo: statusBarView.centerYAnchor),
+            statusIconImageView.widthAnchor.constraint(equalToConstant: 20),
+            statusIconImageView.heightAnchor.constraint(equalToConstant: 20),
+            
+            statusLabel.leadingAnchor.constraint(equalTo: statusIconImageView.trailingAnchor, constant: 8),
+            statusLabel.trailingAnchor.constraint(equalTo: statusBarView.trailingAnchor, constant: -12),
+            statusLabel.centerYAnchor.constraint(equalTo: statusBarView.centerYAnchor),
+            
+            friendsCollectionView.topAnchor.constraint(equalTo: statusBarView.bottomAnchor, constant: 20),
             friendsCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             friendsCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             friendsCollectionView.heightAnchor.constraint(equalToConstant: 80),
@@ -137,7 +197,8 @@ class WheelViewController: UIViewController {
         ])
         
         // Initially hide interactive elements
-        messageTextField.isHidden = true
+        countdownLabel.isHidden = true
+        statusBarView.isHidden = true
         friendsCollectionView.isHidden = true
         spinWheelView.isHidden = true
         spinButton.isHidden = true
@@ -188,7 +249,7 @@ class WheelViewController: UIViewController {
     // MARK: - Interactive Phase Methods
     private func proceedToInteractivePhase() {
         countdownLabel.isHidden = true
-        messageTextField.isHidden = false
+        statusBarView.isHidden = false
         friendsCollectionView.isHidden = false
         spinWheelView.isHidden = false
         spinButton.isHidden = false
@@ -258,6 +319,36 @@ class WheelViewController: UIViewController {
             applicationActivities: nil
         )
         present(activityVC, animated: true)
+    }
+    
+    // Status update methods
+    private func startStatusUpdates() {
+        // Update status immediately
+        updateStatusBar()
+        
+        // Start timer to cycle through statuses
+        statusUpdateTimer = Timer.scheduledTimer(
+            timeInterval: 5.0, // Update every 5 seconds
+            target: self,
+            selector: #selector(updateStatusBar),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+    
+    private func stopStatusUpdates() {
+        statusUpdateTimer?.invalidate()
+        statusUpdateTimer = nil
+    }
+    
+    @objc private func updateStatusBar() {
+        // Animate the transition
+        UIView.transition(with: statusLabel, duration: 0.5, options: .transitionCrossDissolve, animations: {
+            self.statusLabel.text = self.friendStatuses[self.currentStatusIndex]
+        }, completion: nil)
+        
+        // Increment index and wrap around if needed
+        currentStatusIndex = (currentStatusIndex + 1) % friendStatuses.count
     }
 }
 
