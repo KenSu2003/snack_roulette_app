@@ -40,6 +40,10 @@ class WheelViewController: UIViewController {
     private var selectedItemAfterSpin: String?
     private var statusUpdateTimer: Timer?
     private var currentStatusIndex = 0
+    private var spinLockTimer: Timer?
+    private var remainingLockTime: TimeInterval = 0
+    private var isSpinLocked = false
+    private var currentDiscountCode: String = ""
     
     // Simulated friend status messages
     private let friendStatuses = [
@@ -52,11 +56,50 @@ class WheelViewController: UIViewController {
         "Grace loves the dessert at Midnight Ramen"
     ]
     
+    // Discount codes
+    private let discountCodes = [
+        "MIDNIGHT25",
+        "LATENIGHT20",
+        "HUNGRYHOUR15",
+        "SNACKTIME10",
+        "MIDNIGHTMUNCH",
+        "LATENIGHTBITE",
+        "MIDNIGHTCRAVING"
+    ]
+    
     // MARK: - UI Components
     private lazy var countdownLabel: UILabel = {
         let label = UILabel()
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 24, weight: .bold)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    private lazy var discountCodeView: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.systemGray6
+        view.layer.cornerRadius = 10
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
+    private lazy var discountCodeLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Your Discount Code"
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.textColor = .systemGray
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    private lazy var discountCodeValueLabel: UILabel = {
+        let label = UILabel()
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 24, weight: .bold)
+        label.textColor = .systemBlue
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -143,6 +186,7 @@ class WheelViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         stopStatusUpdates()
+        stopLockTimer()
     }
     
     // MARK: - Setup Methods
@@ -153,20 +197,26 @@ class WheelViewController: UIViewController {
         statusBarView.addSubview(statusIconImageView)
         statusBarView.addSubview(statusLabel)
         
+        // Setup discount code view
+        discountCodeView.addSubview(discountCodeLabel)
+        discountCodeView.addSubview(discountCodeValueLabel)
+        
         // Add subviews
-        view.addSubview(countdownLabel)
+        view.addSubview(countdownLabel) // This is only for initial countdown, not the lock countdown
         view.addSubview(statusBarView)
         view.addSubview(friendsCollectionView)
         view.addSubview(spinWheelView)
         view.addSubview(spinButton)
+        view.addSubview(discountCodeView)
         
         // Setup constraints
         NSLayoutConstraint.activate([
+            // Hidden initial countdown (center of screen)
             countdownLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             countdownLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             
-            // Status bar constraints
-            statusBarView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            // Status bar at top with more padding
+            statusBarView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             statusBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             statusBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             statusBarView.heightAnchor.constraint(equalToConstant: 44),
@@ -180,20 +230,41 @@ class WheelViewController: UIViewController {
             statusLabel.trailingAnchor.constraint(equalTo: statusBarView.trailingAnchor, constant: -12),
             statusLabel.centerYAnchor.constraint(equalTo: statusBarView.centerYAnchor),
             
-            friendsCollectionView.topAnchor.constraint(equalTo: statusBarView.bottomAnchor, constant: 20),
+            // Friends collection below status bar with more spacing
+            friendsCollectionView.topAnchor.constraint(equalTo: statusBarView.bottomAnchor, constant: 30),
             friendsCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             friendsCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             friendsCollectionView.heightAnchor.constraint(equalToConstant: 80),
             
+            // Wheel with more spacing from friends
+            spinWheelView.topAnchor.constraint(equalTo: friendsCollectionView.bottomAnchor, constant: 50),
             spinWheelView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinWheelView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             spinWheelView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.8),
             spinWheelView.heightAnchor.constraint(equalTo: spinWheelView.widthAnchor),
             
+            // More space between wheel and spin button
+            spinButton.topAnchor.constraint(equalTo: spinWheelView.bottomAnchor, constant: 60),
             spinButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinButton.topAnchor.constraint(equalTo: spinWheelView.bottomAnchor, constant: 30),
             spinButton.widthAnchor.constraint(equalToConstant: 200),
-            spinButton.heightAnchor.constraint(equalToConstant: 50)
+            spinButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            // Discount code view below spin button
+            discountCodeView.topAnchor.constraint(equalTo: spinButton.bottomAnchor, constant: 20),
+            discountCodeView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            discountCodeView.widthAnchor.constraint(equalToConstant: 250),
+            discountCodeView.heightAnchor.constraint(equalToConstant: 80),
+            discountCodeView.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            
+            // Discount code labels
+            discountCodeLabel.topAnchor.constraint(equalTo: discountCodeView.topAnchor, constant: 10),
+            discountCodeLabel.centerXAnchor.constraint(equalTo: discountCodeView.centerXAnchor),
+            discountCodeLabel.leadingAnchor.constraint(equalTo: discountCodeView.leadingAnchor, constant: 10),
+            discountCodeLabel.trailingAnchor.constraint(equalTo: discountCodeView.trailingAnchor, constant: -10),
+            
+            discountCodeValueLabel.topAnchor.constraint(equalTo: discountCodeLabel.bottomAnchor, constant: 10),
+            discountCodeValueLabel.centerXAnchor.constraint(equalTo: discountCodeView.centerXAnchor),
+            discountCodeValueLabel.leadingAnchor.constraint(equalTo: discountCodeView.leadingAnchor, constant: 10),
+            discountCodeValueLabel.trailingAnchor.constraint(equalTo: discountCodeView.trailingAnchor, constant: -10)
         ])
         
         // Initially hide interactive elements
@@ -202,6 +273,11 @@ class WheelViewController: UIViewController {
         friendsCollectionView.isHidden = true
         spinWheelView.isHidden = true
         spinButton.isHidden = true
+        discountCodeView.isHidden = true
+        
+        // Style the spin button to match the wheel
+        spinButton.backgroundColor = .systemBlue.withAlphaComponent(0.7)
+        spinButton.layer.cornerRadius = 25
     }
     
     // MARK: - Data Loading
@@ -253,6 +329,7 @@ class WheelViewController: UIViewController {
         friendsCollectionView.isHidden = false
         spinWheelView.isHidden = false
         spinButton.isHidden = false
+        discountCodeView.isHidden = true  // Hidden until a discount code is generated
         
         // Setup spin wheel with restaurant names
         let restaurantNames = restaurants.map { $0.name }
@@ -261,16 +338,30 @@ class WheelViewController: UIViewController {
     
     // MARK: - Actions
     @objc private func spinButtonTapped() {
+        if isSpinLocked {
+            let alert = UIAlertController(
+                title: "Spin Locked",
+                message: "You'll need to wait until midnight to spin again.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        
         print("Spinning with items: \(restaurants.map { $0.name })")
         spinWheelView.spin()
     }
     
     // MARK: - Restaurant Details
     private func showRestaurantDetails(for restaurant: Restaurant) {
+        currentDiscountCode = generateDiscountCode()
+        let discountMessage = "Use code: \(currentDiscountCode) for an extra \(restaurant.discount)"
+        
         let alert = UIAlertController(
             title: restaurant.name,
             message: """
-                \(restaurant.discount)
+                \(discountMessage)
                 Cuisine: \(restaurant.cuisine)
                 Rating: \(restaurant.rating)
                 Open until: \(restaurant.openUntil)
@@ -281,17 +372,24 @@ class WheelViewController: UIViewController {
         
         alert.addAction(UIAlertAction(title: "Navigate", style: .default) { [weak self] _ in
             self?.openInMaps(restaurant: restaurant)
+            self?.showDiscountCode(self?.currentDiscountCode ?? "")
+            self?.lockSpinUntilMidnight()
         })
         
         alert.addAction(UIAlertAction(title: "Share", style: .default) { [weak self] _ in
-            self?.shareRestaurant(restaurant: restaurant)
+            self?.shareRestaurant(restaurant: restaurant, discountCode: self?.currentDiscountCode ?? "")
+            self?.showDiscountCode(self?.currentDiscountCode ?? "")
+            self?.lockSpinUntilMidnight()
         })
         
         alert.addAction(UIAlertAction(title: "Spin Again", style: .default) { [weak self] _ in
             self?.spinWheelView.spin()
         })
         
-        alert.addAction(UIAlertAction(title: "Close", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Close", style: .cancel) { [weak self] _ in
+            self?.showDiscountCode(self?.currentDiscountCode ?? "")
+            self?.lockSpinUntilMidnight()
+        })
         
         present(alert, animated: true)
     }
@@ -306,10 +404,11 @@ class WheelViewController: UIViewController {
         mapItem.openInMaps(launchOptions: nil)
     }
     
-    private func shareRestaurant(restaurant: Restaurant) {
+    private func shareRestaurant(restaurant: Restaurant, discountCode: String) {
         let text = """
             Check out \(restaurant.name)!
             \(restaurant.discount)
+            Use discount code: \(discountCode) for an extra discount!
             Open until \(restaurant.openUntil)
             Address: \(restaurant.address)
             """
@@ -349,6 +448,77 @@ class WheelViewController: UIViewController {
         
         // Increment index and wrap around if needed
         currentStatusIndex = (currentStatusIndex + 1) % friendStatuses.count
+    }
+    
+    // MARK: - Spin Lock Timer
+    private func lockSpinUntilMidnight() {
+        // Calculate time until midnight
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.day! += 1  // Next day
+        components.hour = 0   // Midnight
+        components.minute = 0
+        components.second = 0
+        
+        guard let midnightDate = calendar.date(from: components) else { return }
+        
+        // Calculate seconds until midnight
+        remainingLockTime = midnightDate.timeIntervalSince(Date())
+        
+        // Lock spin button
+        isSpinLocked = true
+        spinButton.isEnabled = false
+        spinButton.backgroundColor = .systemGray3
+        discountCodeView.isHidden = false
+        
+        // Start timer
+        updateLockTimerDisplay()
+        spinLockTimer = Timer.scheduledTimer(
+            timeInterval: 1.0,
+            target: self,
+            selector: #selector(updateLockTimer),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+    
+    private func stopLockTimer() {
+        spinLockTimer?.invalidate()
+        spinLockTimer = nil
+    }
+    
+    @objc private func updateLockTimer() {
+        remainingLockTime -= 1.0
+        
+        if remainingLockTime <= 0 {
+            // Unlock spin button
+            isSpinLocked = false
+            spinButton.isEnabled = true
+            spinButton.backgroundColor = .systemBlue.withAlphaComponent(0.7)
+            spinButton.setTitle("SPIN!", for: .normal)
+            discountCodeView.isHidden = true
+            stopLockTimer()
+        } else {
+            updateLockTimerDisplay()
+        }
+    }
+    
+    private func updateLockTimerDisplay() {
+        let hours = Int(remainingLockTime) / 3600
+        let minutes = (Int(remainingLockTime) % 3600) / 60
+        let seconds = Int(remainingLockTime) % 60
+        
+        // Update the button title to show countdown
+        spinButton.setTitle(String(format: "%02d:%02d:%02d", hours, minutes, seconds), for: .normal)
+    }
+    
+    private func generateDiscountCode() -> String {
+        return discountCodes.randomElement() ?? "MIDNIGHT25"
+    }
+    
+    private func showDiscountCode(_ code: String) {
+        discountCodeValueLabel.text = code
+        discountCodeView.isHidden = false
     }
 }
 
